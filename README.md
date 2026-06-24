@@ -1,4 +1,4 @@
-# leven-automaton
+# Levenshtein-automaton
 
 A Levenshtein automaton implementation in Rust. Given a pattern string and a maximum edit distance, it pre-computes a deterministic finite automaton (DFA) that can efficiently test whether any input word is within the allowed Levenshtein distance from the pattern.
 
