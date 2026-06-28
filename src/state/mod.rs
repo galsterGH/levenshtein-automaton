@@ -100,6 +100,11 @@ impl State {
     pub fn is_accepting(&self)->bool{
         return self.edit_distance[self.edit_distance.len() - 1] <= self.diffs_allowed
     }
+
+    pub fn is_dead_state(&self)->bool {
+        self.edit_distance.iter()
+            .fold(true, |acc: bool,val| acc && (*val >= self.diffs_allowed + 1))
+    }
 }
 
 #[cfg(test)]
@@ -269,5 +274,74 @@ mod tests {
         let a = StateId(10);
         let b = a;
         assert!(a == b);
+    }
+
+    #[test]
+    fn is_dead_state_all_over_threshold() {
+        let state = State { edit_distance: vec![3, 3, 3], diffs_allowed: 2 };
+        assert!(state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_all_at_threshold() {
+        let state = State { edit_distance: vec![2, 2, 2], diffs_allowed: 2 };
+        assert!(!state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_one_below_threshold() {
+        let state = State { edit_distance: vec![3, 1, 3], diffs_allowed: 2 };
+        assert!(!state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_all_zero() {
+        let state = State { edit_distance: vec![0, 0, 0], diffs_allowed: 0 };
+        assert!(!state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_zero_diffs_all_one() {
+        let state = State { edit_distance: vec![1, 1, 1], diffs_allowed: 0 };
+        assert!(state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_mixed_values() {
+        let state = State { edit_distance: vec![3, 3, 2], diffs_allowed: 1 };
+        assert!(state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_single_element_dead() {
+        let state = State { edit_distance: vec![2], diffs_allowed: 0 };
+        assert!(state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_single_element_alive() {
+        let state = State { edit_distance: vec![0], diffs_allowed: 0 };
+        assert!(!state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_after_many_wrong_chars() {
+        let state = State::initial_state(3, 1);
+        let s1 = state.on_new_char("abc", 'x');
+        let s2 = s1.on_new_char("abc", 'y');
+        let s3 = s2.on_new_char("abc", 'z');
+        assert!(s3.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_initial_state_is_not_dead() {
+        let state = State::initial_state(3, 2);
+        assert!(!state.is_dead_state());
+    }
+
+    #[test]
+    fn is_dead_state_accepting_state_is_not_dead() {
+        let state = State { edit_distance: vec![1, 0], diffs_allowed: 1 };
+        assert!(!state.is_dead_state());
     }
 }

@@ -2,6 +2,7 @@
 use crate::state::StateId;
 use crate::state::State;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 
 /// A Levenshtein automaton that pre-computes a DFA for fuzzy string matching.
@@ -18,7 +19,9 @@ pub struct LevenshteinAutomaton
     /// Maps each StateId to its corresponding State for acceptance checks.
     state_id_to_state : HashMap<StateId,State>,
     /// The transition table: for each state and character, the next state.
-    transitions: HashMap<StateId,HashMap<char,StateId>>,
+    transitions: HashMap<StateId,HashMap<char,StateId>>,    
+    /// a set of dead states by their ids - a dead state is a state that you can't transition out of.
+    dead_states : HashSet<StateId>,
 }
 
 impl LevenshteinAutomaton {
@@ -31,6 +34,7 @@ impl LevenshteinAutomaton {
             init_state : StateId(0xdeadbeef),
             state_id_to_state : HashMap::new(),
             transitions: HashMap::new(),
+            dead_states: HashSet::new(),
         };
 
         return automaton.create_automaton(diffs_allowed).and_then(|_|Some(automaton));
@@ -49,7 +53,7 @@ impl LevenshteinAutomaton {
     fn match_word_internal(&self, against: &str)->Option<bool> {
         let mut start_state_id = self.init_state;
         for c in against.chars() {
-            let next_state_id =
+            let next_state_id: &StateId =
                 self.transitions.get(&start_state_id).
                 and_then(|inner_hash_map|{
                     inner_hash_map.get(&c)
@@ -71,9 +75,13 @@ impl LevenshteinAutomaton {
         let init_state = State::initial_state(self.pattern.chars().count(), diffs_allowed);
         let init_state_id = init_state.get_state_id()?;
 
-        self.init_state = init_state_id;
+        if init_state.is_dead_state() {
+            self.dead_states.insert(init_state_id);
+        }
 
+        self.init_state = init_state_id;
         self.state_id_to_state.insert(init_state_id,init_state);
+        
         queue.push_back(init_state_id);
 
         while !queue.is_empty(){
@@ -83,17 +91,21 @@ impl LevenshteinAutomaton {
 
             for c in &self.alphabet{
                 let new_state = popped_state.on_new_char(&self.pattern, *c);
-                let new_state_id =  new_state.get_state_id()?;
+                let new_state_id =  &new_state.get_state_id()?;
 
                 self.transitions.entry(state_id)
                 .or_insert_with(HashMap::new)
-                .insert(*c,new_state_id);
+                .insert(*c,*new_state_id);
 
                 if !self.state_id_to_state.contains_key(&new_state_id){
-                    self.state_id_to_state.entry(new_state_id)
-                    .or_insert(new_state);
+                    self.state_id_to_state.entry(*new_state_id)
+                    .or_insert(new_state.clone());
 
-                    queue.push_back(new_state_id);
+                    if new_state.is_dead_state() {
+                        self.dead_states.insert(*new_state_id);
+                    } else {
+                         queue.push_back(*new_state_id);
+                    }
                 }else {
                     continue
                 }
@@ -265,5 +277,65 @@ mod tests {
     fn match_same_length_multiple_edits() {
         let automaton = LevenshteinAutomaton::new("kitten", 3, ascii_alphabet()).unwrap();
         assert!(automaton.match_word("sitting"));
+    }
+
+    #[test]
+    fn dead_states_are_detected() {
+        let automaton = LevenshteinAutomaton::new("abc", 1, ascii_alphabet()).unwrap();
+        assert!(!automaton.dead_states.is_empty());
+    }
+
+    #[test]
+    fn dead_states_have_no_outgoing_transitions_queued() {
+        let automaton = LevenshteinAutomaton::new("abc", 0, ascii_alphabet()).unwrap();
+        for dead_id in &automaton.dead_states {
+            assert!(!automaton.transitions.contains_key(dead_id));
+        }
+    }
+
+    #[test]
+    fn dead_states_are_not_accepting() {
+        let automaton = LevenshteinAutomaton::new("abc", 1, ascii_alphabet()).unwrap();
+        for dead_id in &automaton.dead_states {
+            let state = automaton.state_id_to_state.get(dead_id).unwrap();
+            assert!(!state.is_accepting());
+        }
+    }
+
+    #[test]
+    fn dead_state_optimization_reduces_state_count() {
+        let automaton = LevenshteinAutomaton::new("abc", 1, ascii_alphabet()).unwrap();
+        let total_states = automaton.state_id_to_state.len();
+        let states_with_transitions = automaton.transitions.len();
+        assert!(states_with_transitions < total_states);
+    }
+
+    #[test]
+    fn match_still_works_through_dead_states() {
+        let automaton = LevenshteinAutomaton::new("abc", 1, ascii_alphabet()).unwrap();
+        assert!(automaton.match_word("abc"));
+        assert!(automaton.match_word("axc"));
+        assert!(automaton.match_word("ac"));
+        assert!(!automaton.match_word("xyz"));
+        assert!(!automaton.match_word("axx"));
+    }
+
+    #[test]
+    fn zero_diffs_has_dead_states() {
+        let automaton = LevenshteinAutomaton::new("hello", 0, ascii_alphabet()).unwrap();
+        assert!(!automaton.dead_states.is_empty());
+    }
+
+    #[test]
+    fn init_state_is_not_dead() {
+        let automaton = LevenshteinAutomaton::new("abc", 1, ascii_alphabet()).unwrap();
+        assert!(!automaton.dead_states.contains(&automaton.init_state));
+    }
+
+    #[test]
+    fn large_diffs_has_fewer_dead_states() {
+        let a1 = LevenshteinAutomaton::new("abc", 1, ascii_alphabet()).unwrap();
+        let a2 = LevenshteinAutomaton::new("abc", 2, ascii_alphabet()).unwrap();
+        assert!(a1.dead_states.len() >= a2.dead_states.len());
     }
 }
