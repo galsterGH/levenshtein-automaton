@@ -16,7 +16,6 @@ impl State {
     /// Creates a new state with all edit distances initialized to zero.
     pub fn new(pattern_size: usize, diffs_allowed : usize) -> Self {
         State {
-
             edit_distance: vec!(0;pattern_size + 1),
             diffs_allowed,
         }

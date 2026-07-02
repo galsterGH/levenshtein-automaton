@@ -86,6 +86,24 @@ Returns all dictionary words within `allowed_diffs` edit distance of `pattern`, 
 
 5. **Trie-Automaton intersection**: The `Matcher` walks the Trie and DFA in lockstep via DFS, pruning entire subtrees when a dead state is reached. This avoids checking every word individually.
 
+## CLI Usage
+
+The binary provides an interactive fuzzy search over a dictionary file:
+
+```bash
+cargo run -- /usr/share/dict/words
+```
+
+It will prompt you for a pattern and the number of allowed edits, then print all matching words:
+
+```text
+Enter the pattern
+helo
+Enter the number of diffs
+1
+["hello", "help", "held", "hero", ...]
+```
+
 ## Building
 
 ```bash
